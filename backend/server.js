@@ -11,23 +11,15 @@ const io = socketIo(server, {
 
 let worker, router;
 const transports = new Map();
-const producers = new Map(); // Rastrear producers ativos
+const producers = new Map();
+const consumers = new Map(); // Inicializar consumers como Map
 
 (async () => {
   worker = await mediasoup.createWorker();
   router = await worker.createRouter({
     mediaCodecs: [
-      {
-        kind: 'video',
-        mimeType: 'video/VP8',
-        clockRate: 90000
-      },
-      {
-        kind: 'audio',
-        mimeType: 'audio/opus',
-        clockRate: 48000,
-        channels: 2
-      }
+      { kind: 'video', mimeType: 'video/VP8', clockRate: 90000 },
+      { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 }
     ]
   });
 })();
@@ -35,13 +27,11 @@ const producers = new Map(); // Rastrear producers ativos
 io.on('connection', (socket) => {
   console.log('Usuário conectado:', socket.id);
 
-  // Enviar capacidades RTP
   socket.emit('routerRtpCapabilities', router.rtpCapabilities);
 
-  // Enviar lista de producers existentes para o novo cliente
   const existingProducers = Array.from(producers.keys()).map(producerId => ({ producerId }));
+  console.log('Enviando producers existentes para', socket.id, ':', existingProducers);
   socket.emit('existingProducers', existingProducers);
-  console.log('Enviando producers existentes:', existingProducers);
 
   socket.on('message', (msg) => {
     io.emit('message', { id: socket.id, text: msg });
@@ -51,9 +41,11 @@ io.on('connection', (socket) => {
     const transport = await router.createWebRtcTransport({
       listenIps: [{ ip: '0.0.0.0', announcedIp: '127.0.0.1' }],
       enableUdp: true,
-      enableTcp: true
+      enableTcp: true,
+      initialAvailableOutgoingBitrate: 1000000
     });
     transports.set(transport.id, transport);
+    console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);
     callback({
       id: transport.id,
       iceParameters: transport.iceParameters,
@@ -87,8 +79,8 @@ io.on('connection', (socket) => {
     }
     const producer = await transport.produce({ kind, rtpParameters });
     socket.producer = producer;
-    producers.set(producer.id, producer); // Adicionar à lista de producers
-    io.emit('newProducer', { producerId: producer.id }); // Notificar todos os clientes
+    producers.set(producer.id, producer);
+    io.emit('newProducer', { producerId: producer.id, kind: producer.kind });
     callback({ id: producer.id });
   });
 
@@ -98,19 +90,29 @@ io.on('connection', (socket) => {
       console.error(`Transporte de consumo não encontrado para socket ${socket.id}`);
       return callback({ error: 'Transporte não encontrado' });
     }
+    const producer = producers.get(producerId);
+    if (!producer) {
+      console.error(`Producer não encontrado para ID: ${producerId}`);
+      return callback({ error: 'Producer não encontrado' });
+    }
     const consumer = await transport.consume({
       producerId,
-      rtpCapabilities
+      rtpCapabilities,
+      paused: true
     });
+    consumers.set(consumer.id, consumer); // Agora consumers está definido
     callback({
       id: consumer.id,
-      producerId,
+      producerId: consumer.producerId,
+      kind: producer.kind,
       rtpParameters: consumer.rtpParameters,
+      type: consumer.type,
       transportId: transport.id,
       iceParameters: transport.iceParameters,
       iceCandidates: transport.iceCandidates,
       dtlsParameters: transport.dtlsParameters
     });
+    await consumer.resume();
   });
 
   socket.on('disconnect', () => {
@@ -118,7 +120,7 @@ io.on('connection', (socket) => {
     if (socket.transportId) transports.delete(socket.transportId);
     if (socket.consumerTransportId) transports.delete(socket.consumerTransportId);
     if (socket.producer) {
-      producers.delete(socket.producer.id); // Remover producer ao desconectar
+      producers.delete(socket.producer.id);
     }
   });
 });
