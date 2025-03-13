@@ -11,23 +11,14 @@ const io = socketIo(server, {
 
 let worker, router;
 const transports = new Map();
-const producers = new Map(); // Rastrear producers ativos
+const producers = new Map();
 
 (async () => {
   worker = await mediasoup.createWorker();
   router = await worker.createRouter({
     mediaCodecs: [
-      {
-        kind: 'video',
-        mimeType: 'video/VP8',
-        clockRate: 90000
-      },
-      {
-        kind: 'audio',
-        mimeType: 'audio/opus',
-        clockRate: 48000,
-        channels: 2
-      }
+      { kind: 'video', mimeType: 'video/VP8', clockRate: 90000 },
+      { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 }
     ]
   });
 })();
@@ -35,13 +26,11 @@ const producers = new Map(); // Rastrear producers ativos
 io.on('connection', (socket) => {
   console.log('Usuário conectado:', socket.id);
 
-  // Enviar capacidades RTP
   socket.emit('routerRtpCapabilities', router.rtpCapabilities);
 
-  // Enviar lista de producers existentes para o novo cliente
   const existingProducers = Array.from(producers.keys()).map(producerId => ({ producerId }));
+  console.log('Enviando producers existentes para', socket.id, ':', existingProducers);
   socket.emit('existingProducers', existingProducers);
-  console.log('Enviando producers existentes:', existingProducers);
 
   socket.on('message', (msg) => {
     io.emit('message', { id: socket.id, text: msg });
@@ -87,8 +76,8 @@ io.on('connection', (socket) => {
     }
     const producer = await transport.produce({ kind, rtpParameters });
     socket.producer = producer;
-    producers.set(producer.id, producer); // Adicionar à lista de producers
-    io.emit('newProducer', { producerId: producer.id }); // Notificar todos os clientes
+    producers.set(producer.id, producer);
+    io.emit('newProducer', { producerId: producer.id });
     callback({ id: producer.id });
   });
 
@@ -118,7 +107,7 @@ io.on('connection', (socket) => {
     if (socket.transportId) transports.delete(socket.transportId);
     if (socket.consumerTransportId) transports.delete(socket.consumerTransportId);
     if (socket.producer) {
-      producers.delete(socket.producer.id); // Remover producer ao desconectar
+      producers.delete(socket.producer.id);
     }
   });
 });
