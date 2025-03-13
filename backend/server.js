@@ -80,7 +80,7 @@ io.on('connection', (socket) => {
     const producer = await transport.produce({ kind, rtpParameters });
     socket.producer = producer;
     producers.set(producer.id, producer);
-    io.emit('newProducer', { producerId: producer.id });
+    io.emit('newProducer', { producerId: producer.id, kind: producer.kind });
     callback({ id: producer.id });
   });
 
