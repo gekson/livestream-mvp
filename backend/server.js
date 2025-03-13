@@ -12,6 +12,7 @@ const io = socketIo(server, {
 let worker, router;
 const transports = new Map();
 const producers = new Map();
+const consumers = new Map(); // Inicializar consumers como Map
 
 (async () => {
   worker = await mediasoup.createWorker();
@@ -40,9 +41,11 @@ io.on('connection', (socket) => {
     const transport = await router.createWebRtcTransport({
       listenIps: [{ ip: '0.0.0.0', announcedIp: '127.0.0.1' }],
       enableUdp: true,
-      enableTcp: true
+      enableTcp: true,
+      initialAvailableOutgoingBitrate: 1000000
     });
     transports.set(transport.id, transport);
+    console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);
     callback({
       id: transport.id,
       iceParameters: transport.iceParameters,
@@ -87,19 +90,29 @@ io.on('connection', (socket) => {
       console.error(`Transporte de consumo não encontrado para socket ${socket.id}`);
       return callback({ error: 'Transporte não encontrado' });
     }
+    const producer = producers.get(producerId);
+    if (!producer) {
+      console.error(`Producer não encontrado para ID: ${producerId}`);
+      return callback({ error: 'Producer não encontrado' });
+    }
     const consumer = await transport.consume({
       producerId,
-      rtpCapabilities
+      rtpCapabilities,
+      paused: true
     });
+    consumers.set(consumer.id, consumer); // Agora consumers está definido
     callback({
       id: consumer.id,
-      producerId,
+      producerId: consumer.producerId,
+      kind: producer.kind,
       rtpParameters: consumer.rtpParameters,
+      type: consumer.type,
       transportId: transport.id,
       iceParameters: transport.iceParameters,
       iceCandidates: transport.iceCandidates,
       dtlsParameters: transport.dtlsParameters
     });
+    await consumer.resume();
   });
 
   socket.on('disconnect', () => {
