@@ -113,7 +113,8 @@ function Client({ socket, device }) {
         console.log('Estado da conexão do transporte:', state);
         setTransportState(state);
         if (state === 'failed') {
-          console.error('Falha na conexão do transporte. ICE Candidates:', recvTransport.iceCandidates);
+          console.error('Falha na conexão do transporte. Detalhes:');
+          console.error('ICE Candidates:', recvTransport.iceCandidates);
           console.error('ICE Parameters:', recvTransport.iceParameters);
           console.error('DTLS State:', recvTransport.dtlsState);
           console.error('ICE Gathering State:', recvTransport.iceGatheringState);
@@ -129,11 +130,18 @@ function Client({ socket, device }) {
       });
       
       recvTransport.on('icecandidate', (candidate) => {
-        console.log('Novo candidato ICE no cliente:', candidate);
+        console.log('Candidato ICE enviado:', candidate);
+        if (candidate.candidate.includes('turn')) {
+          console.log('Usando TURN com sucesso!');
+        }
       });
       
       recvTransport.on('icestatechange', (state) => {
         console.log('Estado ICE mudou para:', state);
+      });
+      
+      recvTransport.on('dtlsstatechange', (state) => {
+        console.log('Estado DTLS mudou para:', state);
       });
 
       recvTransportRef.current = recvTransport;

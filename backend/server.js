@@ -47,6 +47,7 @@ io.on('connection', (socket) => {
       enableUdp: true,
       enableTcp: true,
       preferUdp: true,
+      iceLite: false,
       initialAvailableOutgoingBitrate: 1000000,
       iceServers: [
         { urls: 'stun:stun.relay.metered.ca:80' },
