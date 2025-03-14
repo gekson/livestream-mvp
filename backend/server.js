@@ -125,4 +125,4 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(3001, () => console.log('Servidor rodando na porta 3001'));
+server.listen(3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));
