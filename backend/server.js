@@ -9,80 +9,61 @@ const io = socketIo(server, {
   cors: {
     origin: ['http://localhost:3000', process.env.FRONTEND_URL],
     methods: ['GET', 'POST'],
-    credentials: true,
-  },
+    credentials: true
+  }
 });
 
-let worker, router;
+let worker;
+let router;
 const transports = new Map();
 const producers = new Map();
 const consumers = new Map();
 
-(async () => {
-  try {
-    worker = await mediasoup.createWorker({
-      rtcMinPort: 40000,
-      rtcMaxPort: 49999,
-      logLevel: 'debug',
-      logTags: [
-        'info',
-        'ice',
-        'dtls',
-        'rtp',
-        'srtp',
-        'rtcp',
-        'rtx'
-      ],
-      // Disable iceLite at the worker level:
-      rtcIceServers: [
-        { urls: 'stun:stun.relay.metered.ca:80' },
-        {
-          urls: 'turn:global.relay.metered.ca:443',
-          username: '97776f89a5a01cd7ff7a328e',
-          credential: 'JuVcNUrd1Kh8/TxM',
-        },
-      ],
-    });
+async function startServer() {
+  // Configuração do Worker com iceLite: false
+  worker = await mediasoup.createWorker({
+    logLevel: 'debug', // Para mais logs
+    rtcMinPort: 10000,
+    rtcMaxPort: 59999,
+    iceLite: false // Desativar iceLite no Worker
+  });
 
-    worker.on("died", (error) => {
-      console.error("Mediasoup worker died", error);
-    });
-    console.log('Mediasoup Worker criado com sucesso');
-    router = await worker.createRouter({
-      mediaCodecs: [
-        { kind: 'video', mimeType: 'video/VP8', clockRate: 90000 },
-        { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
-      ],
-    });
-    console.log('Mediasoup Router criado com sucesso');
-  } catch (error) {
-    console.error('Error creating Mediasoup Worker or Router', error);
-  }
-})();
+  worker.on('died', () => {
+    console.error('Worker morreu, saindo em 2 segundos...');
+    setTimeout(() => process.exit(1), 2000);
+  });
 
+  // Criar um Router
+  router = await worker.createRouter({
+    mediaCodecs: [
+      { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
+      { kind: 'video', mimeType: 'video/VP8', clockRate: 90000 },
+      { kind: 'video', mimeType: 'video/VP9', clockRate: 90000 },
+      { kind: 'video', mimeType: 'video/H264', clockRate: 90000 },
+    ]
+  });
+
+  console.log('Router criado com sucesso');
+}
+
+startServer().catch(console.error);
+
+// Gerenciar conexões de socket
 io.on('connection', (socket) => {
-  console.log('Usuário conectado:', socket.id);
-
+  console.log(`Usuário conectado: ${socket.id}`);
   socket.emit('routerRtpCapabilities', router.rtpCapabilities);
 
-  const existingProducers = Array.from(producers.keys()).map((producerId) => ({ producerId }));
-  console.log('Enviando producers existentes para', socket.id, ':', existingProducers);
-  socket.emit('existingProducers', existingProducers);
-
-  socket.on('message', (msg) => {
-    io.emit('message', { id: socket.id, text: msg });
-  });
+  // Enviar producers existentes ao conectar
+  socket.emit('existingProducers', Array.from(producers.entries(), ([id, { kind }]) => ({ producerId: id, kind })));
 
   socket.on('createTransport', async ({ sender }, callback) => {
     const transport = await router.createWebRtcTransport({
-      listenIps: [{ ip: '0.0.0.0', announcedIp: null }], // Render gerencia o IP
+      listenIps: [{ ip: '0.0.0.0', announcedIp: null }],
       enableUdp: true,
       enableTcp: true,
       preferUdp: true,
-      // Remove iceLite from transport creation as it is handled at the worker level now:
-      //iceLite: false, 
+      iceLite: false, // Redundante, mas reforça
       initialAvailableOutgoingBitrate: 1000000,
-      /* Remove iceServers in transport level, because we already have in worker level
       iceServers: [
         { urls: 'stun:stun.relay.metered.ca:80' },
         {
@@ -90,89 +71,146 @@ io.on('connection', (socket) => {
           username: '97776f89a5a01cd7ff7a328e',
           credential: 'JuVcNUrd1Kh8/TxM',
         },
-      ],*/
+      ],
     });
     console.log('Transport criado. ICE Candidates:', transport.iceCandidates);
     console.log('ICE Parameters:', transport.iceParameters);
-    transports.set(transport.id, transport);
-    console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);
+
+    transport.on('icestatechange', (state) => {
+      console.log('Estado ICE no servidor:', state);
+    });
+
+    transport.on('dtlsstatechange', (state) => {
+      console.log('Estado DTLS no servidor:', state);
+    });
+
+    transport.on('icecandidate', (candidate) => {
+      console.log('Novo candidato ICE no servidor:', candidate);
+    });
+
+    transport.on('dtlsstatechange', (state) => {
+      if (state === 'closed') {
+        transport.close();
+      }
+    });
+
+    transports.set(socket.id, transport);
+
     callback({
       id: transport.id,
       iceParameters: transport.iceParameters,
       iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters,
+      dtlsParameters: transport.dtlsParameters
     });
 
-    if (sender) {
-      socket.transportId = transport.id;
-    } else {
-      socket.consumerTransportId = transport.id;
-    }
+    transport.on('close', () => {
+      console.log('Transport fechado para socket:', socket.id);
+      transports.delete(socket.id);
+    });
   });
 
   socket.on('connectTransport', async ({ transportId, dtlsParameters }, callback) => {
-    const transport = transports.get(transportId);
-    if (!transport) {
-      console.error(`Transporte não encontrado para ID: ${transportId}`);
-      return callback ? callback({ error: 'Transporte não encontrado' }) : null;
-    }
+    const transport = transports.get(socket.id);
+    if (!transport) return callback('Transporto não encontrado');
+
     await transport.connect({ dtlsParameters });
-    if (callback) callback();
+    callback();
   });
 
-  socket.on('produce', async ({ transportId, kind, rtpParameters }, callback) => {
-    console.log('Recebido rtpParameters:', rtpParameters);
-    const transport = transports.get(transportId);
-    if (!transport) {
-      console.error(`Transporte não encontrado para produce, ID: ${transportId}`);
-      return callback({ error: 'Transporte não encontrado' });
-    }
-    const producer = await transport.produce({ kind, rtpParameters });
-    socket.producer = producer;
-    producers.set(producer.id, producer);
-    io.emit('newProducer', { producerId: producer.id, kind: producer.kind });
+  socket.on('produce', async ({ kind, rtpParameters }, callback) => {
+    const transport = transports.get(socket.id);
+    if (!transport) return callback('Transporto não encontrado');
+
+    const producer = await transport.produce({
+      kind,
+      rtpParameters,
+    });
+
+    producers.set(producer.id, { socketId: socket.id, kind });
+    console.log(`Novo producer criado: ${producer.id} (kind: ${kind})`);
+
+    producer.on('transportclose', () => {
+      console.log(`Producer ${producer.id} fechado`);
+      producers.delete(producer.id);
+    });
+
+    producer.on('close', () => {
+      console.log(`Producer ${producer.id} fechado por close`);
+      producers.delete(producer.id);
+    });
+
+    // Notificar outros clientes sobre o novo producer
+    socket.broadcast.emit('newProducer', { producerId: producer.id, kind });
+
     callback({ id: producer.id });
   });
 
   socket.on('consume', async ({ producerId, rtpCapabilities }, callback) => {
-    const transport = transports.get(socket.consumerTransportId);
-    if (!transport) {
-      console.error(`Transporte de consumo não encontrado para socket ${socket.id}`);
-      return callback({ error: 'Transporte não encontrado' });
-    }
-    const producer = producers.get(producerId);
-    if (!producer) {
-      console.error(`Producer não encontrado para ID: ${producerId}`);
-      return callback({ error: 'Producer não encontrado' });
-    }
+    const transport = transports.get(socket.id);
+    if (!transport) return callback('Transporto não encontrado');
+
+    const producer = Array.from(producers.values()).find(p => p.socketId !== socket.id && p.producerId === producerId);
+    if (!producer) return callback('Producer não encontrado');
+
     const consumer = await transport.consume({
       producerId,
       rtpCapabilities,
-      paused: true,
+      paused: false,
     });
-    consumers.set(consumer.id, consumer);
+
+    consumers.set(consumer.id, { socketId: socket.id, producerId });
+    console.log(`Novo consumer criado: ${consumer.id} para producer ${producerId}`);
+
+    consumer.on('transportclose', () => {
+      console.log(`Consumer ${consumer.id} fechado`);
+      consumers.delete(consumer.id);
+    });
+
+    consumer.on('producerclose', () => {
+      console.log(`Consumer ${consumer.id} fechado por producerclose`);
+      consumers.delete(consumer.id);
+    });
+
+    await consumer.resume();
+
     callback({
       id: consumer.id,
-      producerId: consumer.producerId,
-      kind: producer.kind,
+      producerId,
+      kind: consumer.kind,
       rtpParameters: consumer.rtpParameters,
-      type: consumer.type,
-      transportId: transport.id,
-      iceParameters: transport.iceParameters,
-      iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters,
+      type: consumer.type
     });
-    await consumer.resume();
   });
 
   socket.on('disconnect', () => {
-    console.log('Usuário desconectado:', socket.id);
-    if (socket.transportId) transports.delete(socket.transportId);
-    if (socket.consumerTransportId) transports.delete(socket.consumerTransportId);
-    if (socket.producer) {
-      producers.delete(socket.producer.id);
+    console.log(`Usuário desconectado: ${socket.id}`);
+    const transport = transports.get(socket.id);
+    if (transport) {
+      transport.close();
+      transports.delete(socket.id);
     }
+
+    // Fechar producers e consumers associados
+    for (const [id, producer] of producers) {
+      if (producer.socketId === socket.id) {
+        producer.close();
+        producers.delete(id);
+      }
+    }
+    for (const [id, consumer] of consumers) {
+      if (consumer.socketId === socket.id) {
+        consumer.close();
+        consumers.delete(id);
+      }
+    }
+    socket.broadcast.emit('existingProducers', Array.from(producers.entries(), ([id, { kind }]) => ({ producerId: id, kind })));
   });
 });
 
-server.listen(process.env.PORT || 3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));
+// Configurar o servidor para ouvir na porta fornecida pelo Render
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
+
+module.exports = server;
