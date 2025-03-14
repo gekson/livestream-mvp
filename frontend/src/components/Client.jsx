@@ -5,19 +5,15 @@ import '../styles/StreamLayout.css';
 function Client({ socket, device }) {
   const [pendingProducers, setPendingProducers] = useState([]);
   const videoRef = useRef(null);
-  const audioRef = useRef(null); // Novo ref para o elemento de áudio
+  const audioRef = useRef(null);
   const recvTransportRef = useRef(null);
-  const [videoConsumer, setVideoConsumer] = useState(null);
-  const [audioConsumer, setAudioConsumer] = useState(null);
+  const [transportState, setTransportState] = useState('new'); // Rastrear estado do transporte
 
-  const consumeProducer = async (producerId, recvTransport, isVideo) => {
+  const consumeProducer = async (producerId, recvTransport, kind) => {
     const consumerData = await new Promise(resolve => {
       socket.emit('consume', { producerId, rtpCapabilities: device.rtpCapabilities }, resolve);
     });
     console.log('Consumer Data recebido:', consumerData);
-
-    const kind = consumerData.kind || (isVideo ? 'video' : 'audio');
-    console.log(`Consuming ${kind} producer with ID: ${producerId}`);
 
     const consumer = await recvTransport.consume({
       id: consumerData.id,
@@ -31,28 +27,36 @@ function Client({ socket, device }) {
     const stream = new MediaStream();
     stream.addTrack(consumer.track);
 
+    // Aguardar o transporte estar conectado antes de reproduzir
+    if (transportState !== 'connected') {
+      console.log('Transporte não conectado, aguardando...');
+      return;
+    }
+
     if (kind === 'video') {
-      videoRef.current.srcObject = stream;
-      setVideoConsumer(consumer);
-      videoRef.current.muted = true;
-      videoRef.current.play().catch(err => {
-        console.error('Erro ao reproduzir vídeo:', err);
-        if (err.name === 'NotAllowedError') {
-          console.log('Autoplay bloqueado. Aguardando interação do usuário para reproduzir.');
-        }
-      });
-      console.log('Consumer configurado e vídeo deveria estar visível (muted)');
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.muted = true;
+        videoRef.current.play().catch(err => {
+          console.error('Erro ao reproduzir vídeo:', err);
+          if (err.name === 'NotAllowedError') {
+            console.log('Autoplay bloqueado. Aguardando interação do usuário para reproduzir.');
+          }
+        });
+        console.log('Consumer configurado e vídeo deveria estar visível (muted)');
+      }
     } else if (kind === 'audio') {
-      audioRef.current.srcObject = stream;
-      setAudioConsumer(consumer);
-      audioRef.current.muted = false; // Áudio começa desmutado, pode ser ajustado
-      audioRef.current.play().catch(err => {
-        console.error('Erro ao reproduzir áudio:', err);
-        if (err.name === 'NotAllowedError') {
-          console.log('Autoplay bloqueado. Aguardando interação do usuário para reproduzir.');
-        }
-      });
-      console.log('Consumer configurado e áudio deveria estar visível');
+      if (audioRef.current) {
+        audioRef.current.srcObject = stream;
+        audioRef.current.muted = false;
+        audioRef.current.play().catch(err => {
+          console.error('Erro ao reproduzir áudio:', err);
+          if (err.name === 'NotAllowedError') {
+            console.log('Autoplay bloqueado. Aguardando interação do usuário para reproduzir.');
+          }
+        });
+        console.log('Consumer configurado e áudio deveria estar visível');
+      }
     }
   };
 
@@ -75,7 +79,7 @@ function Client({ socket, device }) {
     socket.on('newProducer', ({ producerId, kind }) => {
       console.log('Novo producer detectado:', producerId, 'kind:', kind);
       if (recvTransportRef.current) {
-        consumeProducer(producerId, recvTransportRef.current, kind === 'video');
+        consumeProducer(producerId, recvTransportRef.current, kind);
       } else {
         setPendingProducers(prev => [...prev, { producerId, kind }]);
       }
@@ -96,6 +100,7 @@ function Client({ socket, device }) {
         dtlsParameters: transportData.dtlsParameters,
         initialAvailableOutgoingBitrate: 1000000
       });
+
       recvTransport.on('connect', ({ dtlsParameters }, callback) => {
         console.log('Conectando transporte com DTLS:', dtlsParameters);
         socket.emit('connectTransport', {
@@ -103,17 +108,21 @@ function Client({ socket, device }) {
           dtlsParameters
         }, callback);
       });
+
       recvTransport.on('connectionstatechange', (state) => {
         console.log('Estado da conexão do transporte:', state);
+        setTransportState(state);
+        if (state === 'failed') {
+          console.error('Falha na conexão do transporte. Verifique STUN/TURN ou rede.');
+        }
       });
+
       recvTransportRef.current = recvTransport;
 
       if (pendingProducers.length > 0) {
         for (const producer of pendingProducers) {
           console.log('Consumindo producer pendente:', producer.producerId);
-          // Usar o producer atual para determinar o tipo (melhorar lógica se possível)
-          const isVideo = !pendingProducers.some(p => p.producerId === producer.producerId && p.producerId.startsWith('video')); // Corrigido aqui
-          consumeProducer(producer.producerId, recvTransport, isVideo);
+          consumeProducer(producer.producerId, recvTransport, producer.kind);
         }
         setPendingProducers([]);
       }
@@ -124,7 +133,7 @@ function Client({ socket, device }) {
     return () => {
       socket.off('newProducer');
     };
-  }, [device, socket]);
+  }, [device, socket, pendingProducers]);
 
   const unmuteVideo = () => {
     if (videoRef.current) {
@@ -147,7 +156,7 @@ function Client({ socket, device }) {
           <Chat socket={socket} />
         </div>
       </div>
-      <audio ref={audioRef} autoPlay style={{ display: 'none' }} /> {/* Elemento de áudio oculto */}
+      <audio ref={audioRef} autoPlay style={{ display: 'none' }} />
     </div>
   );
 }

@@ -6,7 +6,11 @@ const mediasoup = require('mediasoup');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { origin: ['http://localhost:3000', process.env.FRONTEND_URL] }
+  cors: { 
+    origin: ['http://localhost:3000', process.env.FRONTEND_URL],
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
 });
 
 let worker, router;
@@ -39,10 +43,20 @@ io.on('connection', (socket) => {
 
   socket.on('createTransport', async ({ sender }, callback) => {
     const transport = await router.createWebRtcTransport({
-      listenIps: [{ ip: '0.0.0.0', announcedIp: '127.0.0.1' }],
+      listenIps: [{ ip: '0.0.0.0', announcedIp: null }], // Render gerencia o IP
       enableUdp: true,
       enableTcp: true,
-      initialAvailableOutgoingBitrate: 1000000
+      preferUdp: true,
+      initialAvailableOutgoingBitrate: 1000000,
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' }, // Servidor STUN público
+        // Adicione um TURN server se necessário (ex.: usando coturn ou serviços como Twilio)
+        // {
+        //   urls: 'turn:your-turn-server.com:3478',
+        //   username: 'your-username',
+        //   credential: 'your-password'
+        // }
+      ]
     });
     transports.set(transport.id, transport);
     console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);
