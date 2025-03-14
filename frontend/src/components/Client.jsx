@@ -113,7 +113,9 @@ function Client({ socket, device }) {
         console.log('Estado da conexão do transporte:', state);
         setTransportState(state);
         if (state === 'failed') {
-          console.error('Falha na conexão do transporte. Verifique STUN/TURN ou rede.');
+          console.error('Falha na conexão do transporte. ICE Candidates:', recvTransport.iceCandidates);
+          console.error('ICE Parameters:', recvTransport.iceParameters);
+          console.error('DTLS Parameters:', recvTransport.dtlsParameters);
           // Tentar recriar o transporte após falha
           setTimeout(() => {
             console.log('Tentando recriar o transporte...');
