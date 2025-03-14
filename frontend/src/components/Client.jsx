@@ -115,13 +115,25 @@ function Client({ socket, device }) {
         if (state === 'failed') {
           console.error('Falha na conexão do transporte. ICE Candidates:', recvTransport.iceCandidates);
           console.error('ICE Parameters:', recvTransport.iceParameters);
-          console.error('DTLS Parameters:', recvTransport.dtlsParameters);
+          console.error('DTLS State:', recvTransport.dtlsState);
+          console.error('ICE Gathering State:', recvTransport.iceGatheringState);
+          console.error('ICE Connection State:', recvTransport.iceConnectionState);
           // Tentar recriar o transporte após falha
           setTimeout(() => {
             console.log('Tentando recriar o transporte...');
             setupConsumer();
           }, 5000);
+        } else if (state === 'connected') {
+          console.log('Transporte conectado com sucesso!');
         }
+      });
+      
+      recvTransport.on('icecandidate', (candidate) => {
+        console.log('Novo candidato ICE no cliente:', candidate);
+      });
+      
+      recvTransport.on('icestatechange', (state) => {
+        console.log('Estado ICE mudou para:', state);
       });
 
       recvTransportRef.current = recvTransport;

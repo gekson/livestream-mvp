@@ -46,37 +46,19 @@ io.on('connection', (socket) => {
       listenIps: [{ ip: '0.0.0.0', announcedIp: null }], // Render gerencia o IP
       enableUdp: true,
       enableTcp: true,
-      preferTcp: true,
+      preferUdp: true,
       initialAvailableOutgoingBitrate: 1000000,
       iceServers: [
+        { urls: 'stun:stun.relay.metered.ca:80' },
         {
-          urls: "stun:stun.relay.metered.ca:80",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80",
-          username: "97776f89a5a01cd7ff7a328e",
-          credential: "JuVcNUrd1Kh8/TxM",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80?transport=tcp",
-          username: "97776f89a5a01cd7ff7a328e",
-          credential: "JuVcNUrd1Kh8/TxM",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:443",
-          username: "97776f89a5a01cd7ff7a328e",
-          credential: "JuVcNUrd1Kh8/TxM",
-        },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
-          username: "97776f89a5a01cd7ff7a328e",
-          credential: "JuVcNUrd1Kh8/TxM",
+          urls: 'turn:global.relay.metered.ca:443',
+          username: '97776f89a5a01cd7ff7a328e',
+          credential: 'JuVcNUrd1Kh8/TxM',
         },
       ],
     });
     console.log('Transport criado. ICE Candidates:', transport.iceCandidates);
     console.log('ICE Parameters:', transport.iceParameters);
-
     transports.set(transport.id, transport);
     console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);
     callback({
