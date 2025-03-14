@@ -46,7 +46,7 @@ io.on('connection', (socket) => {
       listenIps: [{ ip: '0.0.0.0', announcedIp: null }], // Render gerencia o IP
       enableUdp: true,
       enableTcp: true,
-      preferUdp: true,
+      preferTcp: true,
       initialAvailableOutgoingBitrate: 1000000,
       iceServers: [
         {
@@ -76,7 +76,7 @@ io.on('connection', (socket) => {
     });
     console.log('Transport criado. ICE Candidates:', transport.iceCandidates);
     console.log('ICE Parameters:', transport.iceParameters);
-    
+
     transports.set(transport.id, transport);
     console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);
     callback({
