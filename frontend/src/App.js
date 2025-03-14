@@ -5,7 +5,7 @@ import * as mediasoupClient from 'mediasoup-client';
 import Host from './components/Host';
 import Client from './components/Client';
 
-const socket = io(process.env.REACT_APP_API_URL, {
+const socket = io('https://livestream-backend-54iy.onrender.com', {
   reconnection: true,
   reconnectionAttempts: 5,
   reconnectionDelay: 1000,
