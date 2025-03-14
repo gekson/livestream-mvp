@@ -6,7 +6,7 @@ const mediasoup = require('mediasoup');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { origin: 'http://localhost:3000' }
+  cors: { origin: ['http://localhost:3000', process.env.FRONTEND_URL] }
 });
 
 let worker, router;
@@ -125,4 +125,4 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));
+server.listen(process.env.PORT ||3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));
