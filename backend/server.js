@@ -6,26 +6,58 @@ const mediasoup = require('mediasoup');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { 
+  cors: {
     origin: ['http://localhost:3000', process.env.FRONTEND_URL],
     methods: ['GET', 'POST'],
-    credentials: true
-  }
+    credentials: true,
+  },
 });
 
 let worker, router;
 const transports = new Map();
 const producers = new Map();
-const consumers = new Map(); // Inicializar consumers como Map
+const consumers = new Map();
 
 (async () => {
-  worker = await mediasoup.createWorker();
-  router = await worker.createRouter({
-    mediaCodecs: [
-      { kind: 'video', mimeType: 'video/VP8', clockRate: 90000 },
-      { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 }
-    ]
-  });
+  try {
+    worker = await mediasoup.createWorker({
+      rtcMinPort: 40000,
+      rtcMaxPort: 49999,
+      logLevel: 'debug',
+      logTags: [
+        'info',
+        'ice',
+        'dtls',
+        'rtp',
+        'srtp',
+        'rtcp',
+        'rtx'
+      ],
+      // Disable iceLite at the worker level:
+      rtcIceServers: [
+        { urls: 'stun:stun.relay.metered.ca:80' },
+        {
+          urls: 'turn:global.relay.metered.ca:443',
+          username: '97776f89a5a01cd7ff7a328e',
+          credential: 'JuVcNUrd1Kh8/TxM',
+        },
+      ],
+    });
+
+    worker.on("died", (error) => {
+      console.error("Mediasoup worker died", error);
+    });
+    console.log('Mediasoup Worker criado com sucesso');
+    router = await worker.createRouter({
+      mediaCodecs: [
+        { kind: 'video', mimeType: 'video/VP8', clockRate: 90000 },
+        { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
+      ],
+    });
+    console.log('Mediasoup Router criado com sucesso');
+  } catch (error) {
+    console.error('Error creating Mediasoup Worker or Router', error);
+  }
 })();
 
 io.on('connection', (socket) => {
@@ -33,7 +65,7 @@ io.on('connection', (socket) => {
 
   socket.emit('routerRtpCapabilities', router.rtpCapabilities);
 
-  const existingProducers = Array.from(producers.keys()).map(producerId => ({ producerId }));
+  const existingProducers = Array.from(producers.keys()).map((producerId) => ({ producerId }));
   console.log('Enviando producers existentes para', socket.id, ':', existingProducers);
   socket.emit('existingProducers', existingProducers);
 
@@ -47,8 +79,10 @@ io.on('connection', (socket) => {
       enableUdp: true,
       enableTcp: true,
       preferUdp: true,
-      iceLite: false,
+      // Remove iceLite from transport creation as it is handled at the worker level now:
+      //iceLite: false, 
       initialAvailableOutgoingBitrate: 1000000,
+      /* Remove iceServers in transport level, because we already have in worker level
       iceServers: [
         { urls: 'stun:stun.relay.metered.ca:80' },
         {
@@ -56,7 +90,7 @@ io.on('connection', (socket) => {
           username: '97776f89a5a01cd7ff7a328e',
           credential: 'JuVcNUrd1Kh8/TxM',
         },
-      ],
+      ],*/
     });
     console.log('Transport criado. ICE Candidates:', transport.iceCandidates);
     console.log('ICE Parameters:', transport.iceParameters);
@@ -66,7 +100,7 @@ io.on('connection', (socket) => {
       id: transport.id,
       iceParameters: transport.iceParameters,
       iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters
+      dtlsParameters: transport.dtlsParameters,
     });
 
     if (sender) {
@@ -114,9 +148,9 @@ io.on('connection', (socket) => {
     const consumer = await transport.consume({
       producerId,
       rtpCapabilities,
-      paused: true
+      paused: true,
     });
-    consumers.set(consumer.id, consumer); // Agora consumers está definido
+    consumers.set(consumer.id, consumer);
     callback({
       id: consumer.id,
       producerId: consumer.producerId,
@@ -126,7 +160,7 @@ io.on('connection', (socket) => {
       transportId: transport.id,
       iceParameters: transport.iceParameters,
       iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters
+      dtlsParameters: transport.dtlsParameters,
     });
     await consumer.resume();
   });
@@ -141,4 +175,4 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(process.env.PORT ||3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));
+server.listen(process.env.PORT || 3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));
