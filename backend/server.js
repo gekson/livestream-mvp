@@ -49,14 +49,30 @@ io.on('connection', (socket) => {
       preferUdp: true,
       initialAvailableOutgoingBitrate: 1000000,
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }, // Servidor STUN público
-        // Adicione um TURN server se necessário (ex.: usando coturn ou serviços como Twilio)
-        // {
-        //   urls: 'turn:your-turn-server.com:3478',
-        //   username: 'your-username',
-        //   credential: 'your-password'
-        // }
-      ]
+        {
+          urls: "stun:stun.relay.metered.ca:80",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80",
+          username: "97776f89a5a01cd7ff7a328e",
+          credential: "JuVcNUrd1Kh8/TxM",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "97776f89a5a01cd7ff7a328e",
+          credential: "JuVcNUrd1Kh8/TxM",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "97776f89a5a01cd7ff7a328e",
+          credential: "JuVcNUrd1Kh8/TxM",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "97776f89a5a01cd7ff7a328e",
+          credential: "JuVcNUrd1Kh8/TxM",
+        },
+      ],
     });
     transports.set(transport.id, transport);
     console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);

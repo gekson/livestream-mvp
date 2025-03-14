@@ -114,6 +114,11 @@ function Client({ socket, device }) {
         setTransportState(state);
         if (state === 'failed') {
           console.error('Falha na conexão do transporte. Verifique STUN/TURN ou rede.');
+          // Tentar recriar o transporte após falha
+          setTimeout(() => {
+            console.log('Tentando recriar o transporte...');
+            setupConsumer();
+          }, 5000);
         }
       });
 
