@@ -6,7 +6,10 @@ const mediasoup = require('mediasoup');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { origin: ['http://localhost:3000', process.env.FRONTEND_URL] }
+  cors: { origin: ['http://localhost:3000', 'https://cool-cooks-fetch.loca.lt',process.env.FRONTEND_URL],
+    methods: ['GET', 'POST'],
+    credentials: true
+   }
 });
 
 let worker, router;
