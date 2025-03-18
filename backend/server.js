@@ -6,24 +6,25 @@ const mediasoup = require('mediasoup');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: { origin: ['http://localhost:3000', 'https://cool-cooks-fetch.loca.lt',process.env.FRONTEND_URL],
+  cors: {
+    origin: ['http://localhost:3000', 'https://cool-cooks-fetch.loca.lt', process.env.FRONTEND_URL],
     methods: ['GET', 'POST'],
-    credentials: true
-   }
+    credentials: true,
+  },
 });
 
 let worker, router;
 const transports = new Map();
 const producers = new Map();
-const consumers = new Map(); // Inicializar consumers como Map
+const consumers = new Map();
 
 (async () => {
   worker = await mediasoup.createWorker();
   router = await worker.createRouter({
     mediaCodecs: [
       { kind: 'video', mimeType: 'video/VP8', clockRate: 90000 },
-      { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 }
-    ]
+      { kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
+    ],
   });
 })();
 
@@ -32,12 +33,35 @@ io.on('connection', (socket) => {
 
   socket.emit('routerRtpCapabilities', router.rtpCapabilities);
 
-  const existingProducers = Array.from(producers.keys()).map(producerId => ({ producerId }));
+  const existingProducers = Array.from(producers.keys()).map((producerId) => ({ producerId }));
   console.log('Enviando producers existentes para', socket.id, ':', existingProducers);
   socket.emit('existingProducers', existingProducers);
 
+  socket.on('join-room', ({ roomId, username }) => {
+    socket.join(roomId);
+    socket.username = username || `User_${socket.id.substring(0, 5)}`; // Definir um nome de usuário
+    console.log(`${socket.username} entrou na sala ${roomId}`);
+    // Atualizar lista de usuários na sala
+    const users = Array.from(io.sockets.adapter.rooms.get(roomId) || [])
+      .map((id) => ({
+        id,
+        username: io.sockets.sockets.get(id)?.username || `User_${id.substring(0, 5)}`,
+      }));
+    io.to(roomId).emit('users', users);
+  });
+
   socket.on('message', (msg) => {
-    io.emit('message', { id: socket.id, text: msg });
+    console.log('Mensagem recebida de', socket.id, ':', msg);
+    // Garantir que a mensagem tenha o formato correto
+    const formattedMessage = {
+      sender: socket.username || socket.id, // Usar username ou ID como remetente
+      text: msg.text || String(msg), // Converter para string se for objeto
+      timestamp: msg.timestamp || new Date().toISOString(),
+      roomId: msg.roomId || null, // Incluir roomId se fornecido
+    };
+    console.log('Mensagem formatada para envio:', formattedMessage);
+    // Enviar apenas para outros usuários na mesma sala
+    socket.to(formattedMessage.roomId || '').emit('message', formattedMessage);
   });
 
   socket.on('createTransport', async ({ sender }, callback) => {
@@ -45,7 +69,7 @@ io.on('connection', (socket) => {
       listenIps: [{ ip: '0.0.0.0', announcedIp: '127.0.0.1' }],
       enableUdp: true,
       enableTcp: true,
-      initialAvailableOutgoingBitrate: 1000000
+      initialAvailableOutgoingBitrate: 1000000,
     });
     transports.set(transport.id, transport);
     console.log('Transport criado com DTLS Parameters:', transport.dtlsParameters);
@@ -53,7 +77,7 @@ io.on('connection', (socket) => {
       id: transport.id,
       iceParameters: transport.iceParameters,
       iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters
+      dtlsParameters: transport.dtlsParameters,
     });
 
     if (sender) {
@@ -101,9 +125,9 @@ io.on('connection', (socket) => {
     const consumer = await transport.consume({
       producerId,
       rtpCapabilities,
-      paused: true
+      paused: true,
     });
-    consumers.set(consumer.id, consumer); // Agora consumers está definido
+    consumers.set(consumer.id, consumer);
     callback({
       id: consumer.id,
       producerId: consumer.producerId,
@@ -113,7 +137,7 @@ io.on('connection', (socket) => {
       transportId: transport.id,
       iceParameters: transport.iceParameters,
       iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters
+      dtlsParameters: transport.dtlsParameters,
     });
     await consumer.resume();
   });
@@ -128,4 +152,4 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(process.env.PORT ||3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));
+server.listen(process.env.PORT || 3001, '0.0.0.0', () => console.log('Servidor rodando na porta 3001'));

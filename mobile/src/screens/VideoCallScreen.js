@@ -1,48 +1,41 @@
-// src/screens/VideoCallScreen.js
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import React, { useEffect, useState } from 'react'; // Importe useState explicitamente
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { RTCView } from 'react-native-webrtc';
 import { IconButton } from 'react-native-paper';
 import { useChat } from '../contexts/ChatContext';
 import useWebRTC from '../hooks/useWebRTC';
+import { PermissionsAndroid } from 'react-native';
 
 const VideoCallScreen = ({ navigation }) => {
   const { state, socketRef } = useChat();
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
-  
-  const {
-    localStream,
-    remoteStream,
-    setupWebRTC,
-    createOffer,
-    handleAnswer,
-    handleIceCandidate,
-    cleanup,
-  } = useWebRTC(socketRef);
+  const { localStream, remoteStream, cleanup } = useWebRTC(socketRef);
+  const [isMuted, setIsMuted] = useState(false); // Correção: useState em vez de us
+  const [isCameraOff, setIsCameraOff] = useState(false); // Correção: useState em vez de us
+
+  const requestPermissions = async () => {
+    try {
+      const granted = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      ]);
+      if (
+        granted['android.permission.CAMERA'] === PermissionsAndroid.RESULTS.GRANTED &&
+        granted['android.permission.RECORD_AUDIO'] === PermissionsAndroid.RESULTS.GRANTED
+      ) {
+        console.log('Permissões concedidas');
+      } else {
+        console.log('Permissões negadas');
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+  };
 
   useEffect(() => {
-    setupWebRTC();
-    
-    if (state.isHost) {
-      socketRef.current.on('user-joined', async () => {
-        const offer = await createOffer();
-        socketRef.current.emit('video-offer', offer);
-      });
-    } else {
-      socketRef.current.on('video-offer', async (offer) => {
-        // Implementar lógica para responder à oferta
-      });
-    }
-    
-    socketRef.current.on('video-answer', (answer) => {
-      handleAnswer(answer);
-    });
-    
-    socketRef.current.on('ice-candidate', (candidate) => {
-      handleIceCandidate(candidate);
-    });
-    
+    requestPermissions();
+  }, []);
+  
+  useEffect(() => {
     return () => {
       cleanup();
     };
@@ -51,8 +44,8 @@ const VideoCallScreen = ({ navigation }) => {
   const toggleMute = () => {
     if (localStream) {
       localStream.getAudioTracks().forEach(track => {
-        track.enabled = !track.enabled;
-        setIsMuted(!track.enabled);
+        track.enabled = !isMuted;
+        setIsMuted(!isMuted);
       });
     }
   };
@@ -60,8 +53,8 @@ const VideoCallScreen = ({ navigation }) => {
   const toggleCamera = () => {
     if (localStream) {
       localStream.getVideoTracks().forEach(track => {
-        track.enabled = !track.enabled;
-        setIsCameraOff(!track.enabled);
+        track.enabled = !isCameraOff;
+        setIsCameraOff(!isCameraOff);
       });
     }
   };
@@ -80,7 +73,7 @@ const VideoCallScreen = ({ navigation }) => {
           objectFit="cover"
         />
       )}
-      
+
       {localStream && (
         <RTCView
           streamURL={localStream.toURL()}
@@ -88,10 +81,10 @@ const VideoCallScreen = ({ navigation }) => {
           objectFit="cover"
         />
       )}
-      
+
       <View style={styles.controls}>
         <IconButton
-          icon={isMuted ? "microphone-off" : "microphone"}
+          icon={isMuted ? 'microphone-off' : 'microphone'}
           color="#FFF"
           size={30}
           onPress={toggleMute}
@@ -105,7 +98,7 @@ const VideoCallScreen = ({ navigation }) => {
           style={[styles.controlButton, styles.endCallButton]}
         />
         <IconButton
-          icon={isCameraOff ? "camera-off" : "camera"}
+          icon={isCameraOff ? 'camera-off' : 'camera'}
           color="#FFF"
           size={30}
           onPress={toggleCamera}
@@ -129,8 +122,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 20,
     right: 20,
-    width: 100,
-    height: 150,
+    width: 120,
+    height: 180,
     borderRadius: 10,
     zIndex: 2,
   },

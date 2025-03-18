@@ -19,3 +19,21 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+
+    subprojects { subproject ->
+        if (subproject.name == 'stream-io_react-native-webrtc') {
+            def packageDebugResourcesTask = subproject.tasks.findByName("packageDebugResources")
+            def generateDebugResValuesTask = subproject.rootProject.findProject(':react-native-webrtc').tasks.findByName("generateDebugResValues")
+            if (packageDebugResourcesTask && generateDebugResValuesTask) {
+                packageDebugResourcesTask.dependsOn(generateDebugResValuesTask)
+            }
+        }
+    }
+}

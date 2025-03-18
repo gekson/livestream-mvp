@@ -1,4 +1,3 @@
-// src/contexts/ChatContext.js
 import React, { createContext, useReducer, useContext, useRef, useEffect } from 'react';
 import io from 'socket.io-client';
 
@@ -21,7 +20,6 @@ function chatReducer(state, action) {
     case 'SET_ROOM':
       return { ...state, currentRoom: action.payload, isHost: action.isHost };
     case 'ADD_MESSAGE':
-      // Certifique-se de que o payload é válido antes de adicionar ao estado
       if (!action.payload || typeof action.payload !== 'object') {
         console.warn('Tentativa de adicionar mensagem inválida:', action.payload);
         return state;
@@ -49,47 +47,42 @@ export function ChatProvider({ children }) {
 
   const connectToServer = (serverUrl) => {
     socketRef.current = io(serverUrl, {
-      transports: ['websocket'],  // Force WebSocket only
+      transports: ['polling'], // Usar polling por enquanto
       forceNew: true,
       reconnectionAttempts: 10,
       timeout: 10000,
-      jsonp: false
+      jsonp: false,
     });
-    
-    // Adicione logs para debug
+
     socketRef.current.on('connect', () => {
       console.log('Socket conectado!', socketRef.current.id);
       dispatch({ type: 'CONNECT_SOCKET' });
     });
-    
+
     socketRef.current.on('connect_error', (error) => {
-      console.error('Erro de conexão:', error);
+      console.error('Erro de conexão:', error.message);
     });
-    
+
     socketRef.current.on('disconnect', () => {
       console.log('Socket desconectado');
       dispatch({ type: 'DISCONNECT_SOCKET' });
     });
 
-    socketRef.current.on('connect', () => {
-      dispatch({ type: 'CONNECT_SOCKET' });
-    });
-    
-    socketRef.current.on('disconnect', () => {
-      dispatch({ type: 'DISCONNECT_SOCKET' });
-    });
-    
     socketRef.current.on('message', (message) => {
-      console.log('Mensagem recebida:', JSON.stringify(message));
-      // Certifique-se de que é um objeto com as propriedades corretas
-      if (message && typeof message === 'object' && message.text !== undefined) {
-        dispatch({ type: 'ADD_MESSAGE', payload: message });
-      } else {
-        console.warn('Formato de mensagem inválido:', message);
-      }
+      console.log('Mensagem recebida (crua):', JSON.stringify(message));
+      // Garantir formato consistente
+      const formattedMessage = {
+        sender: message.sender || 'unknown',
+        text: message.text || String(message),
+        timestamp: message.timestamp || new Date().toISOString(),
+        roomId: message.roomId || state.currentRoom,
+      };
+      console.log('Mensagem formatada:', JSON.stringify(formattedMessage));
+      dispatch({ type: 'ADD_MESSAGE', payload: formattedMessage });
     });
-    
+
     socketRef.current.on('users', (users) => {
+      console.log('Usuários recebidos:', users);
       dispatch({ type: 'SET_USERS', payload: users });
     });
   };
@@ -97,7 +90,7 @@ export function ChatProvider({ children }) {
   const joinRoom = (roomId, username, isHost = false) => {
     console.log('Tentando entrar na sala:', roomId, 'como:', username, 'Host?', isHost);
     console.log('Socket está conectado?', socketRef.current?.connected);
-    
+
     if (socketRef.current) {
       socketRef.current.emit('join-room', { roomId, username });
       console.log('Evento join-room emitido');
@@ -111,12 +104,15 @@ export function ChatProvider({ children }) {
     if (socketRef.current && state.currentRoom) {
       const message = {
         text: String(text),
-        sender: socketRef.current.id || 'unknown',
-        timestamp: Date.now(),
+        sender: socketRef.current.id, // Usar ID do socket como remetente
+        timestamp: new Date().toISOString(),
+        roomId: state.currentRoom,
       };
       console.log('Enviando mensagem:', JSON.stringify(message));
       socketRef.current.emit('message', message);
       dispatch({ type: 'ADD_MESSAGE', payload: message });
+    } else {
+      console.warn('Não foi possível enviar mensagem: socket ou sala não definidos');
     }
   };
 

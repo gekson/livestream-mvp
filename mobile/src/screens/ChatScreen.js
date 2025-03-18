@@ -25,8 +25,8 @@ const ChatMessage = ({ message, isOwn }) => {
     <View style={[styles.messageContainer, isOwn ? styles.ownMessage : styles.otherMessage]}>
       {!isOwn && <Avatar.Text size={32} label={senderInitials} style={styles.avatar} />}
       <View style={[styles.messageBubble, isOwn ? styles.ownBubble : styles.otherBubble]}>
-        <Text style={styles.messageText}>{messageText.text}</Text>
-        <Text style={styles.timestamp}>{timestamp.text}</Text>
+        <Text style={styles.messageText}>{messageText}</Text>
+        <Text style={styles.timestamp}>{timestamp}</Text>
       </View>
     </View>
   );
