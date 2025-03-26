@@ -57,6 +57,11 @@ class _ChatWidgetState extends State<ChatWidget> {
     if (message.isEmpty) return;
     
     final socketService = Provider.of<SocketService>(context, listen: false);
+    
+    // Add more detailed logging
+    print('Sending message: "$message" to room: ${socketService.roomId}');
+    
+    // Make sure to include the roomId when sending the message
     socketService.sendMessage(message);
     
     _messageController.clear();
@@ -189,6 +194,9 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Debug print to check message properties
+    print('Rendering message: ${message.text} from ${message.sender}, isMe: ${message.isFromMe}');
+    
     final isMe = message.isFromMe;
     final timeFormat = DateFormat('HH:mm');
     

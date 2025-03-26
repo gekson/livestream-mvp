@@ -4,7 +4,7 @@ class ChatMessage {
   final String sender;
   final String senderId;
   final DateTime timestamp;
-  final bool isFromMe;
+  final bool isFromMe;  // Make sure this property exists
 
   ChatMessage({
     required this.id,
@@ -15,16 +15,16 @@ class ChatMessage {
     required this.isFromMe,
   });
 
+  // Make sure your fromJson factory correctly sets isFromMe
   factory ChatMessage.fromJson(Map<String, dynamic> json, String currentUserId) {
-    final senderId = json['senderId'] ?? '';
-    
+    final String senderId = json['senderId'] ?? '';
     return ChatMessage(
       id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
       text: json['text'] ?? '',
       sender: json['sender'] ?? 'Unknown',
       senderId: senderId,
-      timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'])
+      timestamp: json['timestamp'] != null 
+          ? DateTime.parse(json['timestamp']) 
           : DateTime.now(),
       isFromMe: senderId == currentUserId,
     );

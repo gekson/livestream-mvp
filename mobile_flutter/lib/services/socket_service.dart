@@ -111,6 +111,12 @@ class SocketService extends ChangeNotifier {
     // Connect manually after setting up listeners
     LoggerService().i('Manually connecting socket...');
     socket.connect();
+    
+    // After successful connection, set a default username if not already set
+    if (username == null) {
+      username = 'User_${DateTime.now().millisecondsSinceEpoch.toString().substring(9, 13)}';
+      LoggerService().i('Set default username: $username');
+    }
   }
   
   // Set up socket event listeners
@@ -260,16 +266,34 @@ class SocketService extends ChangeNotifier {
       final Map<String, dynamic> messageData;
       if (data is Map) {
         messageData = Map<String, dynamic>.from(data);
+        LoggerService().d('Message data as map: $messageData');
       } else if (data is String) {
+        LoggerService().d('Message data as string: $data');
         messageData = {'text': data, 'sender': 'System', 'timestamp': DateTime.now().toIso8601String()};
       } else {
+        LoggerService().e('Unexpected message format: ${data.runtimeType}');
         throw FormatException('Unexpected message format: ${data.runtimeType}');
       }
       
       final message = ChatMessage.fromJson(messageData, socket.id ?? '');
-      messages.add(message);
-      LoggerService().d('Messages count: ${messages.length}');
-      notifyListeners();
+      LoggerService().i('Created message object: ${message.text} from ${message.sender}');
+      
+      // Check if this message is a duplicate (same text and similar timestamp)
+      final isDuplicate = messages.any((existingMsg) {
+        // Check if text matches and timestamp is within 2 seconds
+        final timeDifference = existingMsg.timestamp.difference(message.timestamp).inSeconds.abs();
+        return existingMsg.text == message.text && 
+               existingMsg.sender == message.sender &&
+               timeDifference < 2;
+      });
+      
+      if (!isDuplicate) {
+        messages.add(message);
+        LoggerService().i('Added new message. Messages count: ${messages.length}');
+        notifyListeners();
+      } else {
+        LoggerService().i('Skipped duplicate message: ${message.text}');
+      }
     } catch (e) {
       LoggerService().e('Error processing message: $e');
       LoggerService().e('Message data: $data');
@@ -320,6 +344,7 @@ class SocketService extends ChangeNotifier {
   
   // Join a room
   void joinRoom(String roomId, String username) {
+    LoggerService().i('Joining room: $roomId as $username');
     this.roomId = roomId;
     this.username = username;
     
@@ -330,6 +355,19 @@ class SocketService extends ChangeNotifier {
     
     // Clear previous messages
     messages.clear();
+    notifyListeners();
+    
+    // Add a debug message to confirm room joining
+    final systemMessage = ChatMessage(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      text: 'You joined room $roomId as $username',
+      sender: 'System',
+      senderId: 'system',
+      timestamp: DateTime.now(),
+      isFromMe: false,
+    );
+    
+    messages.add(systemMessage);
     notifyListeners();
   }
   
@@ -349,29 +387,58 @@ class SocketService extends ChangeNotifier {
   
   // Send a message to the current room
   void sendMessage(String text) {
-    if (roomId == null || username == null) return;
+    LoggerService().i('Attempting to send message: "$text"');
+    LoggerService().i('Current room ID: ${roomId ?? "null"}');
+    LoggerService().i('Connected status: $isConnected');
+    
+    if (!isConnected || text.isEmpty) {
+      LoggerService().w('Cannot send message: ${isConnected ? 'Empty message' : 'Not connected'}');
+      return;
+    }
+    
+    if (roomId == null) {
+      LoggerService().w('Cannot send message: Not in a room');
+      
+      // Try to auto-join a default room if not in one
+      if (username != null) {
+        final defaultRoomId = 'default-room';
+        LoggerService().i('Auto-joining default room: $defaultRoomId');
+        joinRoom(defaultRoomId, username!);
+        
+        // Try sending the message again after joining
+        Future.delayed(Duration(milliseconds: 500), () {
+          sendMessage(text);
+        });
+      }
+      return;
+    }
     
     final message = {
-      'roomId': roomId,
       'text': text,
-      'sender': username,
       'timestamp': DateTime.now().toIso8601String(),
+      'roomId': roomId,
     };
     
-    socket.emit('message', message);
+    LoggerService().i('Sending message to room $roomId: $text');
     
-    // Add message to local list (optimistic update)
-    final localMessage = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: text,
-      sender: username!,
-      senderId: socket.id ?? '',
-      timestamp: DateTime.now(),
-      isFromMe: true,
-    );
-    
-    messages.add(localMessage);
-    notifyListeners();
+    try {
+      socket.emit('message', message);
+      
+      // Add the message locally to ensure it appears immediately
+      final localMessage = ChatMessage(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        text: text,
+        sender: username ?? 'Me',
+        senderId: socket.id ?? '',
+        timestamp: DateTime.now(),
+        isFromMe: true,
+      );
+      
+      messages.add(localMessage);
+      notifyListeners();
+    } catch (e) {
+      LoggerService().e('Error sending message: $e');
+    }
   }
   
   // Get users in the current room

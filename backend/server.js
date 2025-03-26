@@ -167,7 +167,13 @@ io.on('connection', (socket) => {
       console.log('Mensagem formatada para envio:', formattedMessage);
       
       // Send to everyone in the room including sender (for consistency)
-      io.to(formattedMessage.roomId || '').emit('message', formattedMessage);
+      if (formattedMessage.roomId) {
+        console.log(`Enviando mensagem para sala ${formattedMessage.roomId}`);
+        io.to(formattedMessage.roomId).emit('message', formattedMessage);
+      } else {
+        console.log('Aviso: Mensagem sem roomId, enviando para o socket apenas');
+        socket.emit('message', formattedMessage);
+      }
     } catch (error) {
       console.error('Error in message handling:', error);
     }
